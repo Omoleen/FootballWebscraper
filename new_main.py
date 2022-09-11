@@ -241,8 +241,8 @@ class FootballScraper:
 
     def jsontodf1(self, jsonned):
         try:
-            if int(jsonned['localteam_calculated_stats_all']['i']) > 5 \
-                    and int(jsonned['visitorteam_calculated_stats_all']['i']) > 5 \
+            if int(jsonned['localteam_calculated_stats_all']['results']) > 5 \
+                    and int(jsonned['visitorteam_calculated_stats_all']['results']) > 5 \
                     and jsonned['league_is_cup'] is False and jsonned['neutral_venue'] is False:
                 if 'U21' in jsonned['localteam_name'] or 'U21' in jsonned['visitorteam_name'] or 'women' in jsonned['localteam_name'].lower() or 'women' in jsonned['visitorteam_name'].lower() or 'U19' in jsonned['localteam_name'] \
                         or 'U19' in jsonned['visitorteam_name'] or 'U20' in jsonned['localteam_name'] or 'U20' in jsonned['visitorteam_name'] \
@@ -272,8 +272,15 @@ class FootballScraper:
                 except:
                     pass
 
-                data.update(FlatDict({'game_stats': jsonned['game_stats']}))
-                data.update(FlatDict({'game_stats_intervals': jsonned['game_stats_intervals']}))
+                data.update(FlatDict({'game_stats': jsonned['game_stats']['total']}))
+                data.update(FlatDict({'localteam_game_stats': jsonned['game_stats']['data'][0]}))
+                data.update(FlatDict({'visitorteam_game_stats': jsonned['game_stats']['data'][1]}))
+                data.update(FlatDict({'game_stats_intervals_fh': jsonned['game_stats_intervals']['fh']['total']}))
+                data.update(FlatDict({'localteam_game_stats_intervals_fh': jsonned['game_stats_intervals']['fh']['data'][0]}))
+                data.update(FlatDict({'visitorteam_game_stats_intervals_fh': jsonned['game_stats_intervals']['fh']['data'][1]}))
+                data.update(FlatDict({'game_stats_intervals_sh': jsonned['game_stats_intervals']['sh']['total']}))
+                data.update(FlatDict({'localteam_game_stats_intervals_sh': jsonned['game_stats_intervals']['sh']['data'][0]}))
+                data.update(FlatDict({'visitorteam_game_stats_intervals_sh': jsonned['game_stats_intervals']['sh']['data'][1]}))
                 data.update(FlatDict({'localteam_calculated_stats': jsonned['localteam_calculated_stats']}))
                 data.update(FlatDict({'localteam_calculated_stats_all': jsonned['localteam_calculated_stats_all']}))
                 data.update(FlatDict({'visitorteam_calculated_stats': jsonned['visitorteam_calculated_stats']}))
