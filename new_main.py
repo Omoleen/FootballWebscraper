@@ -23,15 +23,31 @@ class FootballScraper:
     def __init__(self, num_of_days, year, month, day):
         self.csv = 'matches.csv'
         self.num_of_days = num_of_days
+        self.days_left = num_of_days
         self.year = year
         self.month = month
         self.day = day
         self.max_time = 20
-        self.total = []
+        # self.total = 0
+        self.trials = 1
+        self.json_name = 'matches.json'
+        self.all_matches_list = []
+        self.all_failed_matches_list = []
         self.chrome_options = webdriver.ChromeOptions()
         self.chrome_options.add_argument('--headless')
         self.chrome_options.add_argument("--window-size=1920,1080")
+        # self.prepare_json()
         self.scrape_id(self.num_of_days, self.year, self.month, self.day)
+
+    def prepare_json(self):
+        with open(self.json_name, 'w', encoding='utf-8') as json_file:
+            json.dump(self.all_matches_list, json_file, ensure_ascii=False
+                      , indent=4)
+
+    def prepare_failed_json(self):
+        with open('failed.json', 'w', encoding='utf-8') as json_file:
+            json.dump(self.all_failed_matches_list, json_file, ensure_ascii=False
+                      , indent=4)
     
     def crawl(self, id, date):
         accesstoken = ['e3bfdc98-1aa1', 'a1354fe3-d21c', '6b981418-e930', '148ed8bc-f0c4',
@@ -70,42 +86,40 @@ class FootballScraper:
                 # pprint(result)
                 data = self.jsontodf1(result)
                 if type(data) != bool:
-                    with open("football.json", "a") as file:
-                        json.dump(data
-                                  , file
-                                  , ensure_ascii=False
-                                  , indent=4
-                                  , separators=(',', ': ')
-                                  , sort_keys=True)
-                    print('json file saved successfully')
-                    # try:
-                    #     existing_without_df = pd.read_csv(self.csv)
-                    #     if existing_without_df.empty:
-                    #         df = pd.DataFrame(data)
-                    #         df.to_csv(self.csv, index=False)  # used to save the last x number of matches into a csv
-                    #     else:
-                    #         df = pd.DataFrame(data)
-                    #         df.to_csv(self.csv, mode='a', index=False, header=False)
-                    # except Exception as e:
-                    #     df = pd.DataFrame(data)
-                    #     df.to_csv(self.csv, index=False)  # used to save the last x number of matches into a csv
+                    self.all_matches_list.append(data)
+                    # with open("football.json", "a") as file:
+                    #     json.dump(data
+                    #               , file
+                    #               , ensure_ascii=False
+                    #               , indent=4
+                    #               , separators=(',', ': ')
+                    #               , sort_keys=True)
+                    self.prepare_json()
+                    print('json file updated successfully')
+                    # self.total += 1
+                    print(len(self.all_matches_list), ' Matches stored')
                 break
             trial += 1
+            print(f'XHR request failed, trial {trial}')
             time.sleep(1)
             if trial == 4:
-                with open("failedfootball.json", "a") as file:
-                    json.dump({"id": id, "date": date}
-                              , file
-                              , ensure_ascii=False
-                              , indent=4
-                              , separators=(',', ': ')
-                              , sort_keys=True)
+                self.all_failed_matches_list.append({"id": id, "date": date})
+                # with open("failedfootball.json", "a") as file:
+                #     json.dump({"id": id, "date": date}
+                #               , file
+                #               , ensure_ascii=False
+                #               , indent=4
+                #               , separators=(',', ': ')
+                #               , sort_keys=True)
+                self.prepare_failed_json()
                 break
             # print(pprint(response.json()))
 
     def id_to_crawl(self, all_matches):
-        for all_match in all_matches[:1]:
+        for all_match in all_matches:
+            print(f'Crawling ID {all_match["id"]} in progress....')
             self.crawl(all_match['id'], all_match['date'])
+            print('Crawling Finished.')
             time.sleep(1.5)
         
     def scrape_id(self, num_of_days, year1, month1, day1):
@@ -127,55 +141,63 @@ class FootballScraper:
             ser = Service(executable_path="C:\chromedriver.exe")
             driver = webdriver.Chrome(service=ser,
                                       options=self.chrome_options)
-        
-            try:
-                driver.get(url)
-                time.sleep(self.max_time)
-                total_ids = []
-                container = driver.find_element(By.CSS_SELECTOR, '#content-container > div.filters > div > ul > li > button')
-                container.click()
-                num_of_scrolls = 0
-                while True:
+
+            while self.trials < 4:
+                try:
+                    driver.get(url)
+                    time.sleep(self.max_time)
+                    total_ids = []
+                    container = driver.find_element(By.CSS_SELECTOR, '#content-container > div.filters > div > ul > li > button')
+                    container.click()
+                    num_of_scrolls = 0
+                    while True:
+                        time.sleep(3)
+                        container.send_keys(Keys.END)
+                        # print('sleeping')
+                        time.sleep(5)
+                        h = driver.execute_script("return document.body.innerHTML")
+                        soup = BeautifulSoup(h, 'lxml')
+                        all_matches = soup.find_all('div', {'data-v-3e2eccfa': '', 'class': 'card m-1 py-1 ft-game-bg'})
+                        all_matches = [match.get('id').replace('fixture', '').replace('inner', '') for match in all_matches]
+                        print(all_matches)
+                        if set(all_matches).issubset(set(total_ids)):
+                            container.send_keys(Keys.END)
+                            num_of_scrolls += 1
+                            print(num_of_scrolls)
+                            if num_of_scrolls > 0:
+                                break
+                        else:
+                            num_of_scrolls = 0
+                            container.send_keys(Keys.END)
+                            total_ids.clear()
+                            for game_id in all_matches:
+                                total_ids.append(game_id)
+                        print('Loading more matches...')
+                    driver.quit()
+                    all_matches = [{"id": match, "date": f'{day}-{month}-{date.year}'} for match in all_matches]
+                    t = threading.Thread(target=self.id_to_crawl, args=(all_matches,))
+                    t.start()
+                    print(f'Active Threads: {threading.active_count()}')
+                    # self.total.extend(all_matches)
+                    print(date)
+                    # print({'total': self.total})
+                    # t.join()
+                    self.days_left -= 1
+                    print(f'Days Left: {self.days_left}')
+                    self.trials = 1
+                    break
+                except:
+                    self.trials += 1
                     time.sleep(3)
-                    container.send_keys(Keys.END)
-                    # print('sleeping')
-                    time.sleep(5)
-                    h = driver.execute_script("return document.body.innerHTML")
-                    soup = BeautifulSoup(h, 'lxml')
-                    all_matches = soup.find_all('div', {'data-v-3e2eccfa': '', 'class': 'card m-1 py-1 ft-game-bg'})
-                    all_matches = [match.get('id').replace('fixture', '').replace('inner', '') for match in all_matches]
-                    print(all_matches)
-                    if set(all_matches).issubset(set(total_ids)):
-                        container.send_keys(Keys.END)
-                        num_of_scrolls += 1
-                        print(num_of_scrolls)
-                        if num_of_scrolls > 0:
-                            break
-                    else:
-                        num_of_scrolls = 0
-                        container.send_keys(Keys.END)
-                        total_ids.clear()
-                        for game_id in all_matches:
-                            total_ids.append(game_id)
-                    print('Loading more matches...')
-                driver.quit()
-                all_matches = [{"id": match, "date": f'{day}-{month}-{date.year}'} for match in all_matches]
-                t = threading.Thread(target=self.id_to_crawl, args=(all_matches,))
-                t.start()
-                print(f'Active Threads: {threading.active_count()}')
-                self.total.extend(all_matches)
-                print(date)
-                print({'total': self.total})
-                # t.join()
-            except:
-                pass
+                    pass
+            if self.trials == 4:
+                print(date, ' Internet Interrupted')
+                break
 
     def jsontodf1(self, jsonned):
-        print('Number of matches: ')
-        print(jsonned['localteam_calculated_stats_all']['i'],jsonned['neutral_venue'], jsonned['league_is_cup'])
         if int(jsonned['localteam_calculated_stats_all']['i']) > 5 \
                 and int(jsonned['visitorteam_calculated_stats_all']['i']) > 5 \
-                and jsonned['league_is_cup'] == False and jsonned['neutral_venue'] == False:
+                and jsonned['league_is_cup'] is False and jsonned['neutral_venue'] is False:
             data = {
                 'league': jsonned['league_name'],
                 'date': jsonned['date'],
@@ -185,17 +207,18 @@ class FootballScraper:
                 'visitorteam_position': int(jsonned['visitorteam_standings']['position']),
                 'teams_in_league': int(jsonned['teams_in_league']),
             }
-            data.update({
-                'localteam_formation_def': int(jsonned['formations']['localteam_formation'].split('-')[0]),
-                'localteam_formation_mid': int(jsonned['formations']['localteam_formation'].split('-')[1]) if len(jsonned['formations']['localteam_formation'].split('-')) == 3 else int(jsonned['formations']['localteam_formation'].split('-')[2]) + int(jsonned['formations']['localteam_formation'].split('-')[1]),
-                'localteam_formation_att': int(jsonned['formations']['localteam_formation'].split('-')[2]) if len(jsonned['formations']['localteam_formation'].split('-')) == 3 else int(jsonned['formations']['localteam_formation'].split('-')[3]),
-                'visitorteam_formation_def': int(jsonned['formations']['visitorteam_formation'].split('-')[0]),
-                'visitorteam_formation_mid': int(jsonned['formations']['visitorteam_formation'].split('-')[1]) if len(jsonned['formations']['visitorteam_formation'].split('-')) == 3 else int(jsonned['formations']['visitorteam_formation'].split('-')[2]) + int(jsonned['formations']['localteam_formation'].split('-')[1]),
-                'visitorteam_formation_att': int(jsonned['formations']['visitorteam_formation'].split('-')[2]) if len(jsonned['formations']['visitorteam_formation'].split('-')) == 3 else int(jsonned['formations']['visitorteam_formation'].split('-')[3]),
-            })
+            try:
+                data.update({
+                    'localteam_formation_def': int(jsonned['formations']['localteam_formation'].split('-')[0]),
+                    'localteam_formation_mid': int(jsonned['formations']['localteam_formation'].split('-')[1]) if len(jsonned['formations']['localteam_formation'].split('-')) == 3 else int(jsonned['formations']['localteam_formation'].split('-')[2]) + int(jsonned['formations']['localteam_formation'].split('-')[1]),
+                    'localteam_formation_att': int(jsonned['formations']['localteam_formation'].split('-')[2]) if len(jsonned['formations']['localteam_formation'].split('-')) == 3 else int(jsonned['formations']['localteam_formation'].split('-')[3]),
+                    'visitorteam_formation_def': int(jsonned['formations']['visitorteam_formation'].split('-')[0]),
+                    'visitorteam_formation_mid': int(jsonned['formations']['visitorteam_formation'].split('-')[1]) if len(jsonned['formations']['visitorteam_formation'].split('-')) == 3 else int(jsonned['formations']['visitorteam_formation'].split('-')[2]) + int(jsonned['formations']['localteam_formation'].split('-')[1]),
+                    'visitorteam_formation_att': int(jsonned['formations']['visitorteam_formation'].split('-')[2]) if len(jsonned['formations']['visitorteam_formation'].split('-')) == 3 else int(jsonned['formations']['visitorteam_formation'].split('-')[3]),
+                })
+            except:
+                pass
 
-            print('I am here')
-            print(data)
             data.update(FlatDict({'game_stats': jsonned['game_stats']}))
             data.update(FlatDict({'game_stats_intervals': jsonned['game_stats_intervals']}))
             data.update(FlatDict({'localteam_calculated_stats': jsonned['localteam_calculated_stats']}))
@@ -207,11 +230,9 @@ class FootballScraper:
             except:
                 pass
 
-            print(pprint({'data': data}))
-
             return data
         else:
             return False
 
 
-FootballScraper(1, 2021, 4, 30)
+FootballScraper(360, 2021, 6, 30)
