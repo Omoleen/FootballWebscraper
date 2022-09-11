@@ -13,14 +13,14 @@ from pprint import pprint
 import random
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.keys import Keys
-
-
-match_records = []
-url = ''
+from requests_ip_rotator import ApiGateway, EXTRA_REGIONS
+from dotenv import load_dotenv
+import os
 
 
 class FootballScraper:
     def __init__(self, num_of_days, year, month, day):
+        load_dotenv()
         self.csv = 'matches.csv'
         self.num_of_days = num_of_days
         self.days_left = num_of_days
@@ -36,8 +36,10 @@ class FootballScraper:
         self.chrome_options = webdriver.ChromeOptions()
         self.chrome_options.add_argument('--headless')
         self.chrome_options.add_argument("--window-size=1920,1080")
-        # self.prepare_json()
+        self.gateway = ApiGateway(site="https://api.makeyourstats.com", access_key_id = os.environ['ACCESS_KEY_ID'], access_key_secret = os.environ['SECRET_ACCESS_KEY'])
+        self.gateway.start()
         self.scrape_id(self.num_of_days, self.year, self.month, self.day)
+        self.gateway.shutdown()
 
     def prepare_json(self):
         with open(self.json_name, 'w', encoding='utf-8') as json_file:
@@ -58,6 +60,7 @@ class FootballScraper:
         trial = 1
         while True:
             random.shuffle(accesstoken)
+            session = requests.Session()
             headers = {
                 'authority': 'api.makeyourstats.com',
                 'accept': 'application/json, text/plain, */*',
@@ -74,17 +77,23 @@ class FootballScraper:
                 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36 Edg/105.0.1343.27',
             }
 
-            params = {
-                'timezone': '1',
-                'last_games': 'l_all',
-            }
+            # params = {
+            #     'timezone': '1',
+            #     'last_games': 'l_all',
+            # }
+            session.headers.update(headers)
+            # session.params.update(params)
+            session.mount("https://api.makeyourstats.com", self.gateway)
 
-            response = requests.get(f'https://api.makeyourstats.com/api/fixture/{id}/{date}', params=params, headers=headers)
+            response = session.get(f'https://api.makeyourstats.com/api/fixture/{id}/{date}?timezone=1&last_games=l_all')
+
+            # response = requests.get(f'https://api.makeyourstats.com/api/fixture/{id}/{date}', params=params, headers=headers)
             if response.status_code == 200:
                 result = response.json()
                 print('XHR Success')
                 # pprint(result)
                 data = self.jsontodf1(result)
+                # print(data)
                 if type(data) != bool:
                     self.all_matches_list.append(data)
                     # with open("football.json", "a") as file:
@@ -198,6 +207,13 @@ class FootballScraper:
         if int(jsonned['localteam_calculated_stats_all']['i']) > 5 \
                 and int(jsonned['visitorteam_calculated_stats_all']['i']) > 5 \
                 and jsonned['league_is_cup'] is False and jsonned['neutral_venue'] is False:
+            if 'U21' in jsonned['localteam_name'] or 'U21' in jsonned['visitorteam_name'] or 'women' in jsonned['localteam_name'].lower() or 'women' in jsonned['visitorteam_name'].lower() or 'U19' in jsonned['localteam_name'] \
+                    or 'U19' in jsonned['visitorteam_name'] or 'U20' in jsonned['localteam_name'] or 'U20' in jsonned['visitorteam_name'] \
+                    or 'reserve' in jsonned['localteam_name'].lower() or 'reserve' in jsonned['visitorteam_name'].lower() or jsonned['visitorteam_name'][-2:].lower() == ' w' or jsonned['localteam_name'][-2:].lower() == ' w' \
+                    or 'wfc' in jsonned['localteam_name'].lower() or 'wfc' in jsonned['visitorteam_name'].lower() or 'w.f.c' in jsonned['localteam_name'].lower() or 'w.f.c' in jsonned['visitorteam_name'].lower() \
+                    or 'U23' in jsonned['localteam_name'] or 'U23' in jsonned['visitorteam_name'] or 'U18' in jsonned['localteam_name'] or 'U18' in jsonned['visitorteam_name'] \
+                    or 'ladies' in jsonned['localteam_name'].lower() or 'ladies' in jsonned['visitorteam_name'].lower():
+                return False
             data = {
                 'league': jsonned['league_name'],
                 'date': jsonned['date'],
