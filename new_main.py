@@ -129,7 +129,7 @@ class FootballScraper:
             print(f'Crawling ID {all_match["id"]} in progress....')
             self.crawl(all_match['id'], all_match['date'])
             print('Crawling Finished.')
-            time.sleep(1.5)
+            # time.sleep(1.5)
         
     def scrape_id(self, num_of_days, year1, month1, day1):
         start = datetime(year1, month1, day1)
