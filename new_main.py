@@ -1,4 +1,4 @@
-import pandas as pd
+# import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from datetime import datetime
@@ -9,13 +9,14 @@ import time
 import threading
 import requests
 import json
-from pprint import pprint
+# from pprint import pprint
 import random
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.keys import Keys
-from requests_ip_rotator import ApiGateway, EXTRA_REGIONS
+from requests_ip_rotator import ApiGateway
 from dotenv import load_dotenv
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 
 class FootballScraper:
@@ -84,57 +85,84 @@ class FootballScraper:
             session.headers.update(headers)
             # session.params.update(params)
             session.mount("https://api.makeyourstats.com", self.gateway)
+            try:
+                response = session.get(f'https://api.makeyourstats.com/api/fixture/{id}/{date}?timezone=1&last_games=l_all')
 
-            response = session.get(f'https://api.makeyourstats.com/api/fixture/{id}/{date}?timezone=1&last_games=l_all')
-
-            # response = requests.get(f'https://api.makeyourstats.com/api/fixture/{id}/{date}', params=params, headers=headers)
-            if response.status_code == 200:
-                result = response.json()
-                print('XHR Success')
-                # pprint(result)
-                data = self.jsontodf1(result)
-                # print(data)
-                if type(data) != bool:
-                    self.all_matches_list.append(data)
-                    # with open("football.json", "a") as file:
-                    #     json.dump(data
+                # response = requests.get(f'https://api.makeyourstats.com/api/fixture/{id}/{date}', params=params, headers=headers)
+                if response.status_code == 200:
+                    result = response.json()
+                    print('XHR Success')
+                    # pprint(result)
+                    data = self.jsontodf1(result)
+                    # print(data)
+                    if type(data) != bool:
+                        self.all_matches_list.append(data)
+                        # with open("football.json", "a") as file:
+                        #     json.dump(data
+                        #               , file
+                        #               , ensure_ascii=False
+                        #               , indent=4
+                        #               , separators=(',', ': ')
+                        #               , sort_keys=True)
+                        self.prepare_json()
+                        print('json file updated successfully')
+                        # self.total += 1
+                        print(len(self.all_matches_list), ' Matches stored')
+                    break
+                trial += 1
+                print(f'XHR request failed, trial {trial}')
+                time.sleep(1)
+                if trial == 4:
+                    self.all_failed_matches_list.append({"id": id, "date": date})
+                    # with open("failedfootball.json", "a") as file:
+                    #     json.dump({"id": id, "date": date}
                     #               , file
                     #               , ensure_ascii=False
                     #               , indent=4
                     #               , separators=(',', ': ')
                     #               , sort_keys=True)
-                    self.prepare_json()
-                    print('json file updated successfully')
-                    # self.total += 1
-                    print(len(self.all_matches_list), ' Matches stored')
-                break
-            trial += 1
-            print(f'XHR request failed, trial {trial}')
-            time.sleep(1)
-            if trial == 4:
-                self.all_failed_matches_list.append({"id": id, "date": date})
-                # with open("failedfootball.json", "a") as file:
-                #     json.dump({"id": id, "date": date}
-                #               , file
-                #               , ensure_ascii=False
-                #               , indent=4
-                #               , separators=(',', ': ')
-                #               , sort_keys=True)
-                self.prepare_failed_json()
-                break
-            # print(pprint(response.json()))
+                    self.prepare_failed_json()
+                    break
+                # print(pprint(response.json()))
+            except Exception as e:
+                trial += 1
+                print(f'Network Disconnected, trial {trial}')
+                print(e)
+                time.sleep(1)
+                if trial == 4:
+                    self.all_failed_matches_list.append({"id": id, "date": date})
+                    # with open("failedfootball.json", "a") as file:
+                    #     json.dump({"id": id, "date": date}
+                    #               , file
+                    #               , ensure_ascii=False
+                    #               , indent=4
+                    #               , separators=(',', ': ')
+                    #               , sort_keys=True)
+                    self.prepare_failed_json()
+                    break
 
     def id_to_crawl(self, all_matches):
         for all_match in all_matches:
             print(f'Crawling ID {all_match["id"]} in progress....')
-            self.crawl(all_match['id'], all_match['date'])
-            print('Crawling Finished.')
+            # try:
+            # self.crawl(all_match['id'], all_match['date'])
+            t = threading.Thread(target=self.crawl, args=(all_match['id'], all_match['date']))
+
+            # while threading.active_count() > 19:
+            #     time.sleep(2)
+            t.start()
+            # except:
+            #     pass
+            # print('Crawling Finished.')
             # time.sleep(1.5)
+        print(f'Active Threads: {threading.active_count()}')
+        # print('Thread Finished')
         
     def scrape_id(self, num_of_days, year1, month1, day1):
         start = datetime(year1, month1, day1)
         # print(start)
         date = start
+        t = ''
         for i in range(num_of_days):
             date = date + relativedelta(days=1)
             if len(str(date.month)) == 1:
@@ -185,8 +213,14 @@ class FootballScraper:
                     driver.quit()
                     all_matches = [{"id": match, "date": f'{day}-{month}-{date.year}'} for match in all_matches]
                     t = threading.Thread(target=self.id_to_crawl, args=(all_matches,))
+                    # while True:
+                    #     if threading.active_count() < 12:
+                    #         t.start()
+                    #         break
                     t.start()
-                    print(f'Active Threads: {threading.active_count()}')
+                    # self.id_to_crawl(all_matches)
+
+
                     # self.total.extend(all_matches)
                     print(date)
                     # print({'total': self.total})
@@ -202,52 +236,57 @@ class FootballScraper:
             if self.trials == 4:
                 print(date, ' Internet Interrupted')
                 break
+            if i == list(range(num_of_days))[-1]:
+                t.join()
 
     def jsontodf1(self, jsonned):
-        if int(jsonned['localteam_calculated_stats_all']['i']) > 5 \
-                and int(jsonned['visitorteam_calculated_stats_all']['i']) > 5 \
-                and jsonned['league_is_cup'] is False and jsonned['neutral_venue'] is False:
-            if 'U21' in jsonned['localteam_name'] or 'U21' in jsonned['visitorteam_name'] or 'women' in jsonned['localteam_name'].lower() or 'women' in jsonned['visitorteam_name'].lower() or 'U19' in jsonned['localteam_name'] \
-                    or 'U19' in jsonned['visitorteam_name'] or 'U20' in jsonned['localteam_name'] or 'U20' in jsonned['visitorteam_name'] \
-                    or 'reserve' in jsonned['localteam_name'].lower() or 'reserve' in jsonned['visitorteam_name'].lower() or jsonned['visitorteam_name'][-2:].lower() == ' w' or jsonned['localteam_name'][-2:].lower() == ' w' \
-                    or 'wfc' in jsonned['localteam_name'].lower() or 'wfc' in jsonned['visitorteam_name'].lower() or 'w.f.c' in jsonned['localteam_name'].lower() or 'w.f.c' in jsonned['visitorteam_name'].lower() \
-                    or 'U23' in jsonned['localteam_name'] or 'U23' in jsonned['visitorteam_name'] or 'U18' in jsonned['localteam_name'] or 'U18' in jsonned['visitorteam_name'] \
-                    or 'ladies' in jsonned['localteam_name'].lower() or 'ladies' in jsonned['visitorteam_name'].lower():
+        try:
+            if int(jsonned['localteam_calculated_stats_all']['i']) > 5 \
+                    and int(jsonned['visitorteam_calculated_stats_all']['i']) > 5 \
+                    and jsonned['league_is_cup'] is False and jsonned['neutral_venue'] is False:
+                if 'U21' in jsonned['localteam_name'] or 'U21' in jsonned['visitorteam_name'] or 'women' in jsonned['localteam_name'].lower() or 'women' in jsonned['visitorteam_name'].lower() or 'U19' in jsonned['localteam_name'] \
+                        or 'U19' in jsonned['visitorteam_name'] or 'U20' in jsonned['localteam_name'] or 'U20' in jsonned['visitorteam_name'] \
+                        or 'reserve' in jsonned['localteam_name'].lower() or 'reserve' in jsonned['visitorteam_name'].lower() or jsonned['visitorteam_name'][-2:].lower() == ' w' or jsonned['localteam_name'][-2:].lower() == ' w' \
+                        or 'wfc' in jsonned['localteam_name'].lower() or 'wfc' in jsonned['visitorteam_name'].lower() or 'w.f.c' in jsonned['localteam_name'].lower() or 'w.f.c' in jsonned['visitorteam_name'].lower() \
+                        or 'U23' in jsonned['localteam_name'] or 'U23' in jsonned['visitorteam_name'] or 'U18' in jsonned['localteam_name'] or 'U18' in jsonned['visitorteam_name'] \
+                        or 'ladies' in jsonned['localteam_name'].lower() or 'ladies' in jsonned['visitorteam_name'].lower():
+                    return False
+                data = {
+                    'league': jsonned['league_name'],
+                    'date': jsonned['date'],
+                    'localteam_name': jsonned['localteam_name'],
+                    'visitorteam_name': jsonned['visitorteam_name'],
+                    'localteam_position': int(jsonned['localteam_standings']['position']),
+                    'visitorteam_position': int(jsonned['visitorteam_standings']['position']),
+                    'teams_in_league': int(jsonned['teams_in_league']),
+                }
+                try:
+                    data.update({
+                        'localteam_formation_def': int(jsonned['formations']['localteam_formation'].split('-')[0]),
+                        'localteam_formation_mid': int(jsonned['formations']['localteam_formation'].split('-')[1]) if len(jsonned['formations']['localteam_formation'].split('-')) == 3 else int(jsonned['formations']['localteam_formation'].split('-')[2]) + int(jsonned['formations']['localteam_formation'].split('-')[1]),
+                        'localteam_formation_att': int(jsonned['formations']['localteam_formation'].split('-')[2]) if len(jsonned['formations']['localteam_formation'].split('-')) == 3 else int(jsonned['formations']['localteam_formation'].split('-')[3]),
+                        'visitorteam_formation_def': int(jsonned['formations']['visitorteam_formation'].split('-')[0]),
+                        'visitorteam_formation_mid': int(jsonned['formations']['visitorteam_formation'].split('-')[1]) if len(jsonned['formations']['visitorteam_formation'].split('-')) == 3 else int(jsonned['formations']['visitorteam_formation'].split('-')[2]) + int(jsonned['formations']['localteam_formation'].split('-')[1]),
+                        'visitorteam_formation_att': int(jsonned['formations']['visitorteam_formation'].split('-')[2]) if len(jsonned['formations']['visitorteam_formation'].split('-')) == 3 else int(jsonned['formations']['visitorteam_formation'].split('-')[3]),
+                    })
+                except:
+                    pass
+
+                data.update(FlatDict({'game_stats': jsonned['game_stats']}))
+                data.update(FlatDict({'game_stats_intervals': jsonned['game_stats_intervals']}))
+                data.update(FlatDict({'localteam_calculated_stats': jsonned['localteam_calculated_stats']}))
+                data.update(FlatDict({'localteam_calculated_stats_all': jsonned['localteam_calculated_stats_all']}))
+                data.update(FlatDict({'visitorteam_calculated_stats': jsonned['visitorteam_calculated_stats']}))
+                data.update(FlatDict({'visitorteam_calculated_stats_all': jsonned['visitorteam_calculated_stats_all']}))
+                try:
+                    data.update(FlatDict({'odd_new': jsonned['odd_new']}))
+                except:
+                    pass
+
+                return data
+            else:
                 return False
-            data = {
-                'league': jsonned['league_name'],
-                'date': jsonned['date'],
-                'localteam_name': jsonned['localteam_name'],
-                'visitorteam_name': jsonned['visitorteam_name'],
-                'localteam_position': int(jsonned['localteam_standings']['position']),
-                'visitorteam_position': int(jsonned['visitorteam_standings']['position']),
-                'teams_in_league': int(jsonned['teams_in_league']),
-            }
-            try:
-                data.update({
-                    'localteam_formation_def': int(jsonned['formations']['localteam_formation'].split('-')[0]),
-                    'localteam_formation_mid': int(jsonned['formations']['localteam_formation'].split('-')[1]) if len(jsonned['formations']['localteam_formation'].split('-')) == 3 else int(jsonned['formations']['localteam_formation'].split('-')[2]) + int(jsonned['formations']['localteam_formation'].split('-')[1]),
-                    'localteam_formation_att': int(jsonned['formations']['localteam_formation'].split('-')[2]) if len(jsonned['formations']['localteam_formation'].split('-')) == 3 else int(jsonned['formations']['localteam_formation'].split('-')[3]),
-                    'visitorteam_formation_def': int(jsonned['formations']['visitorteam_formation'].split('-')[0]),
-                    'visitorteam_formation_mid': int(jsonned['formations']['visitorteam_formation'].split('-')[1]) if len(jsonned['formations']['visitorteam_formation'].split('-')) == 3 else int(jsonned['formations']['visitorteam_formation'].split('-')[2]) + int(jsonned['formations']['localteam_formation'].split('-')[1]),
-                    'visitorteam_formation_att': int(jsonned['formations']['visitorteam_formation'].split('-')[2]) if len(jsonned['formations']['visitorteam_formation'].split('-')) == 3 else int(jsonned['formations']['visitorteam_formation'].split('-')[3]),
-                })
-            except:
-                pass
-
-            data.update(FlatDict({'game_stats': jsonned['game_stats']}))
-            data.update(FlatDict({'game_stats_intervals': jsonned['game_stats_intervals']}))
-            data.update(FlatDict({'localteam_calculated_stats': jsonned['localteam_calculated_stats']}))
-            data.update(FlatDict({'localteam_calculated_stats_all': jsonned['localteam_calculated_stats_all']}))
-            data.update(FlatDict({'visitorteam_calculated_stats': jsonned['visitorteam_calculated_stats']}))
-            data.update(FlatDict({'visitorteam_calculated_stats_all': jsonned['visitorteam_calculated_stats_all']}))
-            try:
-                data.update(FlatDict({'odd_new': jsonned['odd_new']}))
-            except:
-                pass
-
-            return data
-        else:
+        except:
             return False
 
 
